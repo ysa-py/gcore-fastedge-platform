@@ -112,7 +112,7 @@ geo-page/
 | `npm run build` (tsc strict + fastedge-build) | build success, `wasm/geo-page.wasm` = 12,127,012 bytes |
 | `npm test` (`@gcoredev/fastedge-test` + real `fastedge-run`) | **8/8 passed** |
 | `npm run preview` + `curl` on `:8080` | `200` HTML with IP `203.0.113.42`, Lisbon, Portugal 🇵🇹, POP Paris, FR; `/api/me` JSON; `/healthz` ok; `POST /` → `405` |
-| `scripts/deploy.sh` from this sandbox | **blocked**: `curl: (35) OpenSSL SSL_connect: SSL_ERROR_SYSCALL in connection to api.gcore.com:443` — the sandbox's egress allowlist has no route to Gcore, so the upload never reached the API. The same script is the deploy path from any machine that can reach `api.gcore.com`. |
+| `scripts/deploy.sh` (real deploy to `api.gcore.com`) | **deployed & live** (2026-10-27): app `geo-page` (id 3616), binary 10169 → <https://geo-page-1076003.fastedge.app> — `200` with real POP-injected geo (visitor IP `34.168.24.2`, The Dalles, United States, POP Seattle, US), `/api/me` JSON, `/healthz` ok, `POST /` → `405`, unknown path → `404`. A re-deploy updates the same app (state in `.fastedge/deployment.json`). |
 
 ## Limits
 
