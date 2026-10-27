@@ -275,6 +275,39 @@ fn csrf_guards_block_cross_site_mutations() {
             .with_body(b"{}".to_vec()),
     );
     assert_eq!(cross.status, 403);
+
+    // Served behind a proxy that rewrites `Host` (preview sandbox, CDN): the
+    // app's own declared public origin is a real same-origin request and must
+    // still be able to mutate.
+    let mut proxied = Harness::new();
+    proxied.public_origin = "https://3000-preview.example.com".into();
+    let login_body = || {
+        serde_json::to_vec(&serde_json::json!({
+            "username": ADMIN_USER,
+            "password": ADMIN_PASS,
+        }))
+        .unwrap()
+    };
+    let through_proxy = proxied.request(
+        Req::post("/api/auth/login")
+            .with_header("Content-Type", "application/json")
+            .with_header("X-Requested-With", XRW)
+            .with_header("Origin", "https://3000-preview.example.com")
+            .with_header("Host", "3000-abc123.internal.example")
+            .with_body(login_body()),
+    );
+    assert_eq!(through_proxy.status, 200);
+
+    // And declaring a public origin does not admit anybody else's origin.
+    let other_origin = proxied.request(
+        Req::post("/api/auth/login")
+            .with_header("Content-Type", "application/json")
+            .with_header("X-Requested-With", XRW)
+            .with_header("Origin", "https://evil.example")
+            .with_header("Host", "3000-abc123.internal.example")
+            .with_body(login_body()),
+    );
+    assert_eq!(other_origin.status, 403);
 }
 
 #[test]

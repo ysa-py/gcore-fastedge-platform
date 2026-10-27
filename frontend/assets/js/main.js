@@ -225,6 +225,7 @@ document.addEventListener("keydown", (e) => {
   try {
     const s = await loadSession();
     boot.hidden = true;
+    app.hidden = false;
     if (!s) {
       if ((location.hash || "") !== "#/login") location.hash = "#/login";
       else route();
@@ -233,6 +234,7 @@ document.addEventListener("keydown", (e) => {
     }
   } catch (e) {
     boot.hidden = true;
+    app.hidden = false;
     app.replaceChildren(el("div", { class: "panel panel-pad", style: "" },
       el("h2", {}, "Console failed to start"),
       el("p", { class: "muted" }, e.message || "The session endpoint is unreachable."),

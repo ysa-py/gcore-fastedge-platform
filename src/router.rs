@@ -118,12 +118,14 @@ fn route_inner(app: &App, req: &Req, request_id: &str) -> Result<Resp, ApiError>
 
 /// Cross-site defense for state-changing requests:
 /// 1. `Origin` header, when present, must match the request `Host`
-///    (same-origin policy enforced server-side).
+///    (same-origin policy enforced server-side). A deployment served behind a
+///    proxy that rewrites `Host` can declare its own public origin in
+///    `FE_PUBLIC_ORIGIN`; that one exact origin is then accepted as well.
 /// 2. A custom header `X-Requested-With: fastedge-admin` is required on
 ///    every `/api/*` mutation — browsers cannot add custom headers to a
 ///    cross-site request without a CORS preflight, which this API never
 ///    grants.
-fn csrf_guard(req: &Req) -> Result<(), ApiError> {
+fn csrf_guard(configured_origin: &str, req: &Req) -> Result<(), ApiError> {
     if !matches!(req.method.as_str(), "POST" | "PUT" | "PATCH" | "DELETE") {
         return Ok(());
     }
@@ -138,7 +140,10 @@ fn csrf_guard(req: &Req) -> Result<(), ApiError> {
             .split('/')
             .next()
             .unwrap_or("");
-        if origin_host != host {
+        let configured = configured_origin.trim_end_matches('/');
+        let origin_matches_config =
+            !configured.is_empty() && origin.trim_end_matches('/') == configured;
+        if origin_host != host && !origin_matches_config {
             return Err(ApiError::Forbidden("Cross-site requests are not accepted."));
         }
     }
@@ -181,7 +186,7 @@ fn route_admin_api(
 
     // ---- Public admin routes ----
     if let ("POST", ["api", "auth", "login"]) = (method, segments.as_slice()) {
-        csrf_guard(req)?;
+        csrf_guard(&app.env.public_origin, req)?;
         let body = parse_json::<crate::handlers::admin::LoginRequest>(req)?;
         return Ok(no_store(crate::handlers::admin::login(&admin_ctx, &body)?));
     }
@@ -196,20 +201,20 @@ fn route_admin_api(
             )?))
         }
         ("POST", ["api", "auth", "logout"]) => {
-            csrf_guard(req)?;
+            csrf_guard(&app.env.public_origin, req)?;
             return Ok(no_store(crate::handlers::admin::logout(
                 &admin_ctx, &session,
             )?));
         }
         ("POST", ["api", "auth", "stepup"]) => {
-            csrf_guard(req)?;
+            csrf_guard(&app.env.public_origin, req)?;
             let body = parse_json::<crate::handlers::admin::StepUpRequest>(req)?;
             return Ok(no_store(crate::handlers::admin::step_up(
                 &admin_ctx, &session, &body,
             )?));
         }
         ("POST", ["api", "auth", "revoke-all"]) => {
-            csrf_guard(req)?;
+            csrf_guard(&app.env.public_origin, req)?;
             require(app, &session, Permission::ConfigManage)?;
             require_step_up(app, req, &session)?;
             return Ok(no_store(crate::handlers::admin::revoke_all_sessions(
@@ -260,7 +265,7 @@ fn route_admin_api(
             )?));
         }
         ("PUT", ["api", "config"]) => {
-            csrf_guard(req)?;
+            csrf_guard(&app.env.public_origin, req)?;
             require(app, &session, Permission::ConfigManage)?;
             require_step_up(app, req, &session)?;
             let body = parse_json::<crate::handlers::admin::ConfigPutRequest>(req)?;
@@ -269,7 +274,7 @@ fn route_admin_api(
             )?));
         }
         ("POST", ["api", "export"]) => {
-            csrf_guard(req)?;
+            csrf_guard(&app.env.public_origin, req)?;
             require(app, &session, Permission::ExportRun)?;
             let body = parse_json::<crate::handlers::admin::ExportRequest>(req)?;
             if body.include_credentials {
@@ -281,7 +286,7 @@ fn route_admin_api(
             )?));
         }
         ("POST", ["api", "import"]) => {
-            csrf_guard(req)?;
+            csrf_guard(&app.env.public_origin, req)?;
             require(app, &session, Permission::ImportRun)?;
             let raw: serde_json::Value = parse_json(req)?;
             let body = parse_value_as::<crate::handlers::admin::ImportRequest>(
@@ -319,7 +324,7 @@ fn route_admin_api(
             )?));
         }
         ("POST", ["api", "system", "prune-audit"]) => {
-            csrf_guard(req)?;
+            csrf_guard(&app.env.public_origin, req)?;
             require(app, &session, Permission::SystemRead)?;
             require_step_up(app, req, &session)?;
             return Ok(no_store(crate::handlers::system::prune_audit(
@@ -352,7 +357,7 @@ fn route_users(
     };
 
     if segments.len() == 2 && segments[1] == "bulk" {
-        csrf_guard(req)?;
+        csrf_guard(&app.env.public_origin, req)?;
         let body = parse_json::<crate::handlers::admin::BulkRequest>(req)?;
         match body.action.as_str() {
             "suspend" | "reactivate" | "revoke" => {
@@ -384,7 +389,7 @@ fn route_users(
                 Ok(no_store(crate::handlers::admin::list_users(&ctx, session)?))
             }
             "POST" => {
-                csrf_guard(req)?;
+                csrf_guard(&app.env.public_origin, req)?;
                 require(app, session, Permission::UsersManage)?;
                 require_step_up(app, req, session)?;
                 let body = parse_json::<crate::handlers::admin::UserCreateRequest>(req)?;
@@ -410,7 +415,7 @@ fn route_users(
                     )?));
                 }
                 "PATCH" => {
-                    csrf_guard(req)?;
+                    csrf_guard(&app.env.public_origin, req)?;
                     require(app, session, Permission::UsersManage)?;
                     require_step_up(app, req, session)?;
                     let body = parse_json::<crate::handlers::admin::UserPatchRequest>(req)?;
@@ -422,7 +427,7 @@ fn route_users(
             },
             4 => match (method, segments[3]) {
                 ("POST", "status") => {
-                    csrf_guard(req)?;
+                    csrf_guard(&app.env.public_origin, req)?;
                     require(app, session, Permission::UsersManage)?;
                     require_step_up(app, req, session)?;
                     let body = parse_json::<crate::handlers::admin::StatusActionRequest>(req)?;
@@ -431,7 +436,7 @@ fn route_users(
                     )?));
                 }
                 ("POST", "credentials") => {
-                    csrf_guard(req)?;
+                    csrf_guard(&app.env.public_origin, req)?;
                     require(app, session, Permission::CredsManage)?;
                     require_step_up(app, req, session)?;
                     let body = parse_json::<crate::handlers::admin::CredentialIssueRequest>(req)?;
@@ -446,7 +451,7 @@ fn route_users(
                     )?));
                 }
                 ("PUT", "subscription") => {
-                    csrf_guard(req)?;
+                    csrf_guard(&app.env.public_origin, req)?;
                     require(app, session, Permission::SubsManage)?;
                     require_step_up(app, req, session)?;
                     let body = parse_json::<crate::handlers::admin::SubscriptionPutRequest>(req)?;
@@ -458,7 +463,7 @@ fn route_users(
             },
             5 => match (method, segments[3], segments[4]) {
                 ("DELETE", "credentials", cred_id) => {
-                    csrf_guard(req)?;
+                    csrf_guard(&app.env.public_origin, req)?;
                     require(app, session, Permission::CredsManage)?;
                     require_step_up(app, req, session)?;
                     return Ok(no_store(crate::handlers::admin::revoke_credential(
@@ -466,7 +471,7 @@ fn route_users(
                     )?));
                 }
                 ("POST", "subscription", "renew") => {
-                    csrf_guard(req)?;
+                    csrf_guard(&app.env.public_origin, req)?;
                     require(app, session, Permission::SubsManage)?;
                     require_step_up(app, req, session)?;
                     let body = parse_json::<crate::handlers::admin::RenewRequest>(req)?;
@@ -509,7 +514,7 @@ fn route_admins(
             )?));
         }
         ("POST", ["api", "admins"]) => {
-            csrf_guard(req)?;
+            csrf_guard(&app.env.public_origin, req)?;
             require(app, session, Permission::ConfigManage)?;
             require_step_up(app, req, session)?;
             let body = parse_json::<crate::handlers::admin::AdminCreateRequest>(req)?;
@@ -521,7 +526,7 @@ fn route_admins(
             require(app, session, Permission::ConfigManage)?;
             match m {
                 "PATCH" => {
-                    csrf_guard(req)?;
+                    csrf_guard(&app.env.public_origin, req)?;
                     require_step_up(app, req, session)?;
                     let body = parse_json::<crate::handlers::admin::AdminPatchRequest>(req)?;
                     return Ok(no_store(crate::handlers::admin::patch_admin(
@@ -529,7 +534,7 @@ fn route_admins(
                     )?));
                 }
                 "DELETE" => {
-                    csrf_guard(req)?;
+                    csrf_guard(&app.env.public_origin, req)?;
                     require_step_up(app, req, session)?;
                     return Ok(no_store(crate::handlers::admin::delete_admin(
                         &ctx, session, username,
@@ -542,7 +547,7 @@ fn route_admins(
             require(app, session, Permission::ConfigManage)?;
             match m {
                 "POST" => {
-                    csrf_guard(req)?;
+                    csrf_guard(&app.env.public_origin, req)?;
                     require_step_up(app, req, session)?;
                     let body = parse_json::<crate::handlers::admin::AdminPasswordRequest>(req)?;
                     return Ok(no_store(crate::handlers::admin::reset_admin_password(
@@ -575,7 +580,7 @@ fn route_app_api(
     };
     match (method, segments.as_slice()) {
         ("POST", ["api", "v1", "token"]) => {
-            csrf_guard(req)?;
+            csrf_guard(&app.env.public_origin, req)?;
             let body = parse_json::<crate::handlers::app::TokenExchangeRequest>(req)?;
             crate::handlers::app::exchange(&ctx, &body)
         }
@@ -684,11 +689,11 @@ mod tests {
     #[test]
     fn csrf_requires_custom_header_on_mutations() {
         // Missing X-Requested-With on POST → rejected.
-        assert!(csrf_guard(&Req::post("/api/users")).is_err());
+        assert!(csrf_guard("", &Req::post("/api/users")).is_err());
         let ok = Req::post("/api/users").with_header("X-Requested-With", "fastedge-admin");
-        assert!(csrf_guard(&ok).is_ok());
+        assert!(csrf_guard("", &ok).is_ok());
         // GET needs nothing.
-        assert!(csrf_guard(&Req::get("/api/users")).is_ok());
+        assert!(csrf_guard("", &Req::get("/api/users")).is_ok());
     }
 
     #[test]
@@ -697,11 +702,29 @@ mod tests {
             .with_header("X-Requested-With", "fastedge-admin")
             .with_header("Origin", "https://evil.example")
             .with_header("Host", "myapp.fastedge.app");
-        assert!(csrf_guard(&req).is_err());
+        assert!(csrf_guard("", &req).is_err());
         let same = Req::post("/api/users")
             .with_header("X-Requested-With", "fastedge-admin")
             .with_header("Origin", "https://myapp.fastedge.app")
             .with_header("Host", "myapp.fastedge.app");
-        assert!(csrf_guard(&same).is_ok());
+        assert!(csrf_guard("", &same).is_ok());
+    }
+
+    #[test]
+    fn csrf_admits_only_the_configured_public_origin_behind_a_proxy() {
+        // A proxy that rewrites `Host` (preview sandbox, CDN): the app's own
+        // declared public origin is accepted although it differs from `Host`…
+        let behind_proxy = Req::post("/api/users")
+            .with_header("X-Requested-With", "fastedge-admin")
+            .with_header("Origin", "https://3000-preview.example.com")
+            .with_header("Host", "3000-abc123.internal.example");
+        assert!(csrf_guard("https://3000-preview.example.com", &behind_proxy).is_ok());
+        // …while every other origin stays rejected, configured or not.
+        assert!(csrf_guard("", &behind_proxy).is_err());
+        let cross = Req::post("/api/users")
+            .with_header("X-Requested-With", "fastedge-admin")
+            .with_header("Origin", "https://evil.example")
+            .with_header("Host", "3000-abc123.internal.example");
+        assert!(csrf_guard("https://3000-preview.example.com", &cross).is_err());
     }
 }
