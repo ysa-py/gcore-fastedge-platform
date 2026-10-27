@@ -1,0 +1,25 @@
+{
+  "previewPort": 3000,
+  "healthPath": "/healthz",
+  "startCommand": "docker compose -f docker-compose.base44.yml up -d --build",
+  "notes": "The wasm artifact is rebuilt from the bind-mounted source at container start-up, so a source edit is picked up by that service's own watcher (src/, frontend/, Cargo.toml, Cargo.lock).",
+  "secrets": [
+    {
+      "name": "SESSION_SIGNING_KEY",
+      "description": "HS256 session signing key (base64, 32 bytes). Generated as a development placeholder; the compose entrypoint generates an ephemeral one locally if it is absent. Rotate it for any real deployment.",
+      "requiredAtBoot": true,
+      "generatedForDevelopment": true
+    },
+    {
+      "name": "APP_TOKEN_SIGNING_KEY",
+      "description": "Signing key for application API tokens (base64, 32 bytes). Generated as a development placeholder; the compose entrypoint generates an ephemeral one locally if it is absent. Rotate it for any real deployment.",
+      "requiredAtBoot": true,
+      "generatedForDevelopment": true
+    },
+    {
+      "name": "GCORE_API_KEY",
+      "description": "Gcore permanent API token (Customer Portal → Account settings → API tokens), used for the Edge Storage write path, client stats and limits. Only needed for a real FastEdge deployment; the sandbox runs against the local control-plane mock, which accepts the placeholder in .env.base44-defaults.",
+      "requiredAtBoot": false
+    }
+  ]
+}

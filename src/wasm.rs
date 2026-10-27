@@ -147,6 +147,7 @@ fn read_env_config() -> EnvConfig {
         api_base: env_or("FE_API_BASE", "https://api.gcore.com"),
         cookie_name: env_or("FE_COOKIE_NAME", ""),
         insecure_cookie: env_or("FE_COOKIE_INSECURE", "").eq_ignore_ascii_case("true"),
+        public_origin: env_or("FE_PUBLIC_ORIGIN", ""),
         app_version: env!("CARGO_PKG_VERSION"),
     }
 }

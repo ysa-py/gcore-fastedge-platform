@@ -335,6 +335,19 @@ table.tbl { width: 100%; border-collapse: collapse; font-size: 13.5px; }
   .topbar { padding: 11px 14px; }
 }
 
+/* Narrow screens: grid panels must be allowed to shrink below the natural
+   width of the table inside them — .table-wrap already scrolls horizontally,
+   so this removes the sideways page scroll instead of widening the track. */
+@media (max-width: 900px) {
+  .grid-2 > *, .grid-3 > * { min-width: 0; }
+}
+
+/* Very narrow screens: the topbar Help shortcut duplicates the "Help & API"
+   item in the drawer navigation; dropping it keeps the topbar on one row. */
+@media (max-width: 640px) {
+  .topbar-actions .btn { display: none; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
 }

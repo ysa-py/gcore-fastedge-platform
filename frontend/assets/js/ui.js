@@ -49,7 +49,10 @@ export function icon(name, size = 16) {
   svg.setAttribute("stroke-linecap", "round");
   svg.setAttribute("stroke-linejoin", "round");
   svg.setAttribute("aria-hidden", "true");
-  for (const seg of d.split(/(?=[A-Z])/)) {
+  // Split only at absolute moveto commands: splitting on any uppercase letter
+  // cuts a path mid-command (e.g. "…V5l-8-3-8 3v7c0…") into segments that no
+  // longer start with a moveto, which the browser rejects as an invalid path.
+  for (const seg of d.split(/(?=M(?=\s*[-\d.]))/)) {
     if (!seg.trim()) continue;
     const p = document.createElementNS(ns, "path");
     p.setAttribute("d", seg.trim());

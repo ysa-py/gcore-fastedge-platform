@@ -1,0 +1,10 @@
+# Sandbox / development image for the local Gcore control-plane mock plus the
+# Redis-backed Edge Storage stand-in it embeds (scripts/dev/local_gcore_mock.py).
+#
+# The mock's own source stays bind-mounted (editable); only its dependency is
+# baked in here so container start-up needs no network.
+FROM python:3.12-slim
+
+RUN pip install --no-cache-dir redislite==6.2.912183
+
+WORKDIR /app

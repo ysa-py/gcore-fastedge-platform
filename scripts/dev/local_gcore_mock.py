@@ -19,6 +19,10 @@ exercised. It is never deployed anywhere.
 Usage:
     python3 scripts/dev/local_gcore_mock.py --redis-port 6399 --http-port 8099 --api-key test-gcore-api-key
 
+    # containerised: expose Redis and the HTTP surface to the other containers
+    # on the compose network (see docker-compose.base44.yml)
+    python3 scripts/dev/local_gcore_mock.py --redis-bind 0.0.0.0 --http-bind 0.0.0.0
+
 Requires: redislite (pip install redislite).
 """
 import argparse
@@ -132,14 +136,35 @@ def main():
     global REDIS, API_KEY
     ap = argparse.ArgumentParser()
     ap.add_argument("--redis-port", type=int, default=6399)
+    ap.add_argument(
+        "--redis-bind",
+        default="127.0.0.1",
+        help="address the embedded Redis listens on (0.0.0.0 shares it with another container)",
+    )
     ap.add_argument("--http-port", type=int, default=8099)
+    ap.add_argument(
+        "--http-bind",
+        default="127.0.0.1",
+        help="address the mock's HTTP surface listens on (0.0.0.0 makes it reachable from another container)",
+    )
     ap.add_argument("--api-key", default="test-gcore-api-key")
     args = ap.parse_args()
     API_KEY = args.api_key
-    REDIS = redislite.Redis(serverconfig={"port": str(args.redis_port)})
-    print(f"[mock] redis listening on :{args.redis_port}", flush=True)
-    server = ThreadingHTTPServer(("127.0.0.1", args.http_port), Handler)
-    print(f"[mock] gcore control-plane mock on http://127.0.0.1:{args.http_port}", flush=True)
+    REDIS = redislite.Redis(
+        serverconfig={
+            "port": str(args.redis_port),
+            "bind": args.redis_bind,
+            # Reachable from outside this container only when asked for, and then
+            # never left in Redis' loopback-only "protected" mode.
+            "protected-mode": "no" if args.redis_bind != "127.0.0.1" else "yes",
+        }
+    )
+    print(f"[mock] redis listening on {args.redis_bind}:{args.redis_port}", flush=True)
+    server = ThreadingHTTPServer((args.http_bind, args.http_port), Handler)
+    print(
+        f"[mock] gcore control-plane mock on http://{args.http_bind}:{args.http_port}",
+        flush=True,
+    )
     try:
         server.serve_forever()
     except KeyboardInterrupt:

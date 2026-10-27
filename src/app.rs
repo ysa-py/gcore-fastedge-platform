@@ -16,6 +16,11 @@ pub struct EnvConfig {
     /// When true, cookies omit the `Secure` attribute — LOCAL fastedge-run
     /// testing over plain HTTP only. Never enable in production.
     pub insecure_cookie: bool,
+    /// The deployment's own public origin (`https://host[:port]`), for
+    /// deployments served behind a proxy that rewrites the `Host` header
+    /// (a CDN front end, or the Base44 preview sandbox). Empty by default:
+    /// the cross-site check then relies on `Host` alone, exactly as before.
+    pub public_origin: String,
     pub app_version: &'static str,
 }
 
@@ -26,6 +31,7 @@ impl Default for EnvConfig {
             api_base: "https://api.gcore.com".into(),
             cookie_name: "__Host-fes".into(),
             insecure_cookie: false,
+            public_origin: String::new(),
             app_version: env!("CARGO_PKG_VERSION"),
         }
     }

@@ -141,6 +141,9 @@ pub struct Harness {
     pub http: FakeHttp,
     pub cp: MemControlPlane,
     pub failing_reads: Option<FailingReads>,
+    /// Configures `FE_PUBLIC_ORIGIN`: the app's own public origin for
+    /// deployments behind a proxy that rewrites `Host`. Empty by default.
+    pub public_origin: String,
 }
 
 impl Harness {
@@ -178,6 +181,7 @@ impl Harness {
             http: FakeHttp::default(),
             cp,
             failing_reads: None,
+            public_origin: String::new(),
         }
     }
 
@@ -195,6 +199,7 @@ impl Harness {
                 api_base: "https://api.test.example".into(),
                 cookie_name: "fes_session".into(),
                 insecure_cookie: true,
+                public_origin: self.public_origin.clone(),
                 app_version: "test",
             },
         };

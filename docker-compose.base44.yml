@@ -1,0 +1,185 @@
+# Base44 sandbox / local development stack for the FastEdge admin platform.
+#
+# This is NOT a production deployment (see docs/DEPLOYMENT.md). It runs the REAL
+# WASM artifact inside the REAL FastEdge runtime (`fastedge-run`), backed by a
+# Redis-backed Edge Storage stand-in and the project's own local Gcore
+# control-plane mock (scripts/dev/local_gcore_mock.py — local testing only).
+#
+# No application code is baked into any image: the repository is bind-mounted,
+# the wasm artifact is rebuilt from that source at container start-up, and the
+# app service keeps watching src/ and frontend/ so edits rebuild + reload it.
+#
+#   docker compose -f docker-compose.base44.yml up -d --build
+#   admin panel: http://localhost:3000   (bootstrap-admin / bootstrap-secret-1)
+
+services:
+  # ---------------------------------------------------------------------- #
+  # Edge Storage (Redis) + the Gcore control-plane mock. fastedge-run reads #
+  # the KV store directly; the mock performs the account-API writes, which  #
+  # is the real platform's write path.                                      #
+  # ---------------------------------------------------------------------- #
+  control-plane:
+    build:
+      context: .
+      dockerfile: .base44/Dockerfile.control-plane
+    restart: on-failure
+    working_dir: /app
+    volumes:
+      - ./:/app
+    env_file:
+      - ./.env.base44-defaults # development placeholders — listed first
+      - /run/base44/app.env # platform secrets — always win
+    environment:
+      - REDIS_PORT=6399
+      - MOCK_PORT=8099
+    command:
+      - sh
+      - -ec
+      - |
+        exec python3 scripts/dev/local_gcore_mock.py \
+          --redis-bind 0.0.0.0 --redis-port "$$REDIS_PORT" \
+          --http-bind 0.0.0.0 --http-port "$$MOCK_PORT" \
+          --api-key "$$GCORE_API_KEY"
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - |
+          python3 -c "import socket; socket.create_connection(('127.0.0.1', $${REDIS_PORT}), 3).close()" \
+            || { echo "control-plane: redis (redislite) is not accepting connections"; exit 1; }
+          python3 -c "import os, urllib.request; urllib.request.urlopen(urllib.request.Request('http://127.0.0.1:$${MOCK_PORT}/fastedge/v1/me', headers={'Authorization': 'APIKey ' + os.environ['GCORE_API_KEY']}), timeout=5).read()" \
+            || { echo "control-plane: mock HTTP surface is not answering the account API"; exit 1; }
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    labels:
+      base44.project: "Gcore control-plane mock + Edge Storage (Redis)"
+      base44.kind: "infra"
+
+  # ---------------------------------------------------------------------- #
+  # The application: wasm built from the bind-mounted source, executed by   #
+  # the real FastEdge runtime.                                             #
+  # ---------------------------------------------------------------------- #
+  app:
+    build:
+      context: .
+      dockerfile: .base44/Dockerfile.app
+    restart: on-failure
+    working_dir: /app
+    volumes:
+      - ./:/app
+    env_file:
+      - ./.env.base44-defaults
+      - /run/base44/app.env
+    environment:
+      - BASE44_PREVIEW_MODE
+      - BASE44_PUBLIC_HOST_SUFFIX
+      - PUBLIC_PORT=8080
+      - INTERNAL_PORT=8081
+      - REDIS_HOST=control-plane
+      - REDIS_PORT=6399
+      - MOCK_HOST=control-plane
+      - MOCK_PORT=8099
+    ports:
+      - "3000:8080"
+    depends_on:
+      control-plane:
+        condition: service_healthy
+    command:
+      - sh
+      - -ec
+      - |
+        set -u
+        WASM="target/wasm32-wasip1/release/fastedge_admin_platform.wasm"
+
+        # --- development credentials --------------------------------------
+        # The bootstrap admin password is the documented local-only test
+        # credential; its PBKDF2 hash is derived here at start-up, so no hash
+        # and no real secret is ever committed. Signing keys come from the
+        # platform's secret store when present, and are generated locally
+        # otherwise (dev-only fallback).
+        ADMIN_USERNAME="$${ADMIN_USERNAME:-bootstrap-admin}"
+        ADMIN_PASSWORD="$${ADMIN_PASSWORD:-bootstrap-secret-1}"
+        ADMIN_PASSWORD_HASH="$$(python3 scripts/generate_admin_credentials.py --password "$$ADMIN_PASSWORD" | sed -n 's/^ADMIN_PASSWORD_HASH=//p')"
+        SESSION_SIGNING_KEY="$${SESSION_SIGNING_KEY:-$$(python3 scripts/generate_admin_credentials.py --session-key | sed -n 's/^SESSION_SIGNING_KEY=//p')}"
+        APP_TOKEN_SIGNING_KEY="$${APP_TOKEN_SIGNING_KEY:-$$(python3 scripts/generate_admin_credentials.py --session-key | sed -n 's/^APP_TOKEN_SIGNING_KEY=//p')}"
+
+        # Secure/`__Host-` session cookies require HTTPS. The sandbox preview
+        # terminates TLS at its proxy, so under the preview flag the app uses
+        # the plain-HTTP cookie variant; unset (or any other value) keeps the
+        # production behaviour untouched.
+        COOKIE_INSECURE="false"
+        if [ "$${BASE44_PREVIEW_MODE:-}" = "1" ]; then COOKIE_INSECURE="true"; fi
+
+        # The preview proxy rewrites `Host` to its own internal hostname while
+        # forwarding the browser's `Origin` untouched, so the app is told its
+        # own public origin (preview only). Unset keeps the same-origin check
+        # exactly as it behaves in production.
+        PUBLIC_ORIGIN=""
+        if [ "$${BASE44_PREVIEW_MODE:-}" = "1" ] && [ -n "$${BASE44_PUBLIC_HOST_SUFFIX:-}" ]; then
+          PUBLIC_ORIGIN="https://3000-$${BASE44_PUBLIC_HOST_SUFFIX}"
+        fi
+
+        build_wasm() {
+          echo "[app] building wasm32-wasip1 artifact from the bind-mounted source…"
+          cargo build --release --target wasm32-wasip1
+        }
+
+        start_runtime() {
+          fastedge-run http \
+            --port "$$INTERNAL_PORT" \
+            --wasm "$$WASM" \
+            --kv-stores "default=redis://$$REDIS_HOST:$$REDIS_PORT" \
+            --env FE_STORE_ID=42 \
+            --env "FE_API_BASE=http://$$MOCK_HOST:$$MOCK_PORT" \
+            --env FE_STORE_NAME=default \
+            --env "FE_COOKIE_INSECURE=$$COOKIE_INSECURE" \
+            --env "FE_PUBLIC_ORIGIN=$$PUBLIC_ORIGIN" \
+            --secret "SESSION_SIGNING_KEY=$$SESSION_SIGNING_KEY" \
+            --secret "APP_TOKEN_SIGNING_KEY=$$APP_TOKEN_SIGNING_KEY" \
+            --secret "GCORE_API_KEY=$${GCORE_API_KEY:-test-gcore-api-key}" \
+            --secret "ADMIN_USERNAME=$$ADMIN_USERNAME" \
+            --secret "ADMIN_PASSWORD_HASH=$$ADMIN_PASSWORD_HASH" &
+          RUNTIME_PID="$$!"
+        }
+
+        # fastedge-run binds loopback only, so a plain TCP forwarder provides
+        # the container-reachable listener that the published port needs.
+        socat TCP-LISTEN:"$$PUBLIC_PORT",fork,reuseaddr TCP:127.0.0.1:"$$INTERNAL_PORT" &
+
+        fingerprint() {
+          find src frontend Cargo.toml Cargo.lock -type f -printf '%p %T@ %s\n' | LC_ALL=C sort | cksum
+        }
+
+        build_wasm
+        start_runtime
+        LAST="$$(fingerprint)"
+        echo "[app] admin panel served on :$$PUBLIC_PORT — watching for source edits"
+        while sleep 2; do
+          CUR="$$(fingerprint)"
+          if [ "$$CUR" != "$$LAST" ]; then
+            LAST="$$CUR"
+            echo "[app] source change detected — rebuilding the wasm artifact…"
+            if build_wasm; then
+              kill "$$RUNTIME_PID" 2>/dev/null || true
+              start_runtime
+              echo "[app] reloaded."
+            else
+              echo "[app] build failed — the previous build keeps serving."
+            fi
+          fi
+        done
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - |
+          curl -fsS -o /dev/null "http://127.0.0.1:$${PUBLIC_PORT}/healthz" \
+            || { echo "app: forwarder/fastedge-run is not answering /healthz"; exit 1; }
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 300s
+    labels:
+      base44.project: "FastEdge admin platform (wasm + fastedge-run)"
+      base44.kind: "web"
+      base44.port: "3000"
