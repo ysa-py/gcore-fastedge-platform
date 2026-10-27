@@ -44,7 +44,7 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-"$RUNNER" http -p "$RUNTIME_PORT" -w wasm/geo-page.wasm --wasi-http true --geo \
+"$RUNNER" http -p "$RUNTIME_PORT" -w wasm/geo-page.wasm --wasi-http true \
   --headers x-real-ip=203.0.113.42 \
   --headers geoip-country-code=PT \
   --headers geoip-country-name=Portugal \
@@ -54,7 +54,9 @@ trap cleanup EXIT INT TERM
   --headers geoip-asn=12345 \
   --headers geoip-lat=38.7167 \
   --headers geoip-long=-9.1333 \
-  --headers x-forwarded-proto=https &
+  --headers x-forwarded-proto=https \
+  --headers pop-city=Paris \
+  --headers pop-country-code=FR &
 RUNTIME_PID=$!
 
 for _ in $(seq 1 30); do

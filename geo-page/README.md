@@ -44,7 +44,7 @@ npm test               # 8 tests, run against the built WASM
 
 `npm test` uses `@gcoredev/fastedge-test`, which boots the bundled `fastedge-run` binary — the same runtime the edge uses — and issues real HTTP requests at the compiled WASM. The tests feed `x-real-ip` / `geoip-*` headers exactly as a POP would.
 
-`scripts/preview.sh` serves the built artifact on `0.0.0.0:8080` with **demo** geo values (Lisbon, Portugal), because a machine outside Gcore's network has no POP to inject geo headers. It is a faithful preview of the deployed page, not the edge deployment itself.
+`scripts/preview.sh` serves the built artifact on `0.0.0.0:8080` with **demo** geo values (visitor in Lisbon, Portugal; POP in Paris), because a machine outside Gcore's network has no POP to inject geo headers. It is a faithful preview of the deployed page, not the edge deployment itself.
 
 ## Deploy
 
@@ -66,6 +66,30 @@ The script implements the `/gcore-fastedge:deploy` flow in one command:
 Useful flags: `--dry-run` (plan only, no key needed), `--name`, `--description`, `--wasm`, `--skip-build`. `GCORE_API_BASE` overrides the API host. Requirements: `curl`, `jq`, Node ≥ 22.
 
 The API returns the app URL at build time (`POST`/`PATCH /fastedge/v1/apps` → `url`), typically of the form `https://<app-id>.fastedge.gcore.com`. There is no separate DNS step.
+
+### Deploy from CI instead (optional)
+
+If the shell you are in cannot reach `api.gcore.com`, the same script runs unchanged on a GitHub runner. Add `GCORE_API_KEY` as a repository secret and a manual workflow at `.github/workflows/deploy-geo-page.yml`:
+
+```yaml
+name: deploy geo-page
+on: { workflow_dispatch: {} }
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    defaults: { run: { working-directory: geo-page } }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '22' }
+      - run: sudo apt-get update && sudo apt-get install -y jq
+      - run: npm ci
+      - run: npm test
+      - run: ./scripts/deploy.sh
+        env: { GCORE_API_KEY: "${{ secrets.GCORE_API_KEY }}" }
+```
+
+The job prints the app URL; revoke the key afterwards if it is a temporary one.
 
 ## Layout
 
