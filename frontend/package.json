@@ -1,0 +1,10 @@
+{
+  "name": "fastedge-admin-frontend",
+  "version": "1.0.0",
+  "description": "Embedded admin panel for the FastEdge authorization platform (no build step; native ES modules served from the WASM binary).",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "test": "node --test ../scripts/test-frontend.mjs"
+  }
+}

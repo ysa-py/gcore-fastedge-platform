@@ -1,0 +1,37 @@
+[package]
+name = "fastedge-admin-platform"
+version = "1.0.0"
+edition = "2021"
+rust-version = "1.85"
+description = "Edge-native authorization platform and intelligent admin panel for Gcore FastEdge"
+license = "MIT"
+repository = "https://github.com/ysa-py/gcore-fastedge-platform"
+publish = false
+
+[lib]
+name = "fastedge_admin_platform"
+crate-type = ["cdylib", "rlib"]
+
+# Dependencies that compile for both the host (tests) and wasm32-wasip1.
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+hmac = "0.12"
+pbkdf2 = { version = "0.12", default-features = false }
+base64 = "0.22"
+getrandom = "0.2"
+
+# FastEdge SDK is only needed when building the WebAssembly artifact.
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+fastedge = "0.4"
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
+
+[profile.test]
+opt-level = 1

@@ -1,0 +1,31 @@
+{
+  "_comment": "Sanitized example of the runtime configuration this app consumes. Values shown are placeholders only — never put real credentials here. Secrets belong in the Gcore Secrets Manager; the FE_* variables below are set as FastEdge environment variables on the application.",
+  "environment_variables": {
+    "FE_STORE_NAME": "my-admin-store",
+    "FE_STORE_ID": "12345",
+    "FE_API_BASE": "https://api.gcore.com",
+    "FE_COOKIE_NAME": "",
+    "FE_COOKIE_INSECURE": "false"
+  },
+  "secrets_via_gcore_secrets_manager": {
+    "SESSION_SIGNING_KEY": "<32+ bytes of entropy, e.g. output of scripts/generate_admin_credentials.py --session-key>",
+    "APP_TOKEN_SIGNING_KEY": "<32+ bytes of entropy, different from SESSION_SIGNING_KEY>",
+    "GCORE_API_KEY": "<Gcore permanent API token with FastEdge permissions>",
+    "ADMIN_USERNAME": "bootstrap-admin",
+    "ADMIN_PASSWORD_HASH": "<output of scripts/generate_admin_credentials.py --password '...'>"
+  },
+  "app_config_stored_in_edge_storage": {
+    "key": "config/app",
+    "value": {
+      "schema_version": 1,
+      "session_ttl_s": 1800,
+      "step_up_ttl_s": 900,
+      "app_token_ttl_s": 300,
+      "login_max_attempts": 10,
+      "login_window_s": 900,
+      "import_batch_max": 100,
+      "audit_retention_days": 90,
+      "pbkdf2_iterations": 100000
+    }
+  }
+}
