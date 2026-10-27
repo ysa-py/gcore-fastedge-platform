@@ -11,8 +11,6 @@
 #
 #   docker compose -f docker-compose.base44.yml up -d --build
 #   admin panel: http://localhost:3000   (bootstrap-admin / bootstrap-secret-1)
-#   geo-page preview: http://localhost:8080  (the TypeScript FastEdge app in ./geo-page,
-#                     served by the real fastedge-run with demo geo values)
 
 services:
   # ---------------------------------------------------------------------- #
@@ -185,68 +183,3 @@ services:
       base44.project: "FastEdge admin platform (wasm + fastedge-run)"
       base44.kind: "web"
       base44.port: "3000"
-
-  # ---------------------------------------------------------------------- #
-  # geo-page: the TypeScript FastEdge HTTP app in ./geo-page (its own       #
-  # project, deployed to the real edge with geo-page/scripts/deploy.sh).    #
-  # Dependencies come from the committed lockfile and the wasm is built     #
-  # from the bind-mounted source at start-up; scripts/preview.mjs runs the  #
-  # real fastedge-run behind a proxy and injects demo geo values, because   #
-  # a machine outside Gcore's network has no POP to supply geoip-* headers. #
-  # No secrets: the deploy is a control-plane call made from the host shell.#
-  # ---------------------------------------------------------------------- #
-  geo-page:
-    image: node:22
-    restart: on-failure
-    working_dir: /app/geo-page
-    volumes:
-      - ./:/app
-    ports:
-      - "8080:8080"
-    command:
-      - sh
-      - -ec
-      - |
-        CI=true npm ci --no-audit --no-fund
-        npm run build
-
-        start_preview() {
-          npm run preview &
-          PREVIEW_PID="$$!"
-        }
-
-        fingerprint() {
-          find src/ -type f -printf '%p %T@ %s\n' | LC_ALL=C sort | cksum
-        }
-
-        start_preview
-        LAST="$$(fingerprint)"
-        echo "[geo-page] preview served on :8080 — watching src/ for edits"
-        while sleep 2; do
-          CUR="$$(fingerprint)"
-          if [ "$$CUR" != "$$LAST" ]; then
-            LAST="$$CUR"
-            echo "[geo-page] source change detected — rebuilding the wasm…"
-            if npm run build; then
-              kill "$$PREVIEW_PID" 2>/dev/null || true
-              start_preview
-              echo "[geo-page] reloaded."
-            else
-              echo "[geo-page] build failed — the previous build keeps serving."
-            fi
-          fi
-        done
-    healthcheck:
-      test:
-        - CMD-SHELL
-        - |
-          curl -fsS -o /dev/null "http://127.0.0.1:8080/healthz" \
-            || { echo "geo-page: the preview proxy / fastedge-run is not answering /healthz"; exit 1; }
-      interval: 15s
-      timeout: 10s
-      retries: 5
-      start_period: 240s
-    labels:
-      base44.project: "geo-page (FastEdge HTTP app, TypeScript)"
-      base44.kind: "web"
-      base44.port: "8080"

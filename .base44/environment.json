@@ -18,7 +18,7 @@
     },
     {
       "name": "GCORE_API_KEY",
-      "description": "Gcore permanent API token (Customer Portal → Account settings → API tokens). Used for the Edge Storage write path, client stats and limits, and by geo-page/scripts/deploy.sh to deploy the geo-page FastEdge app to the real edge. Only needed for a real FastEdge deployment; the admin panel in the sandbox runs against the local control-plane mock, which accepts the placeholder in .env.base44-defaults. If it is set, the mock's control-plane is addressed with this key instead — set it only when you want real FastEdge deployments.",
+      "description": "Gcore permanent API token (Customer Portal → Account settings → API tokens), used for the Edge Storage write path, client stats and limits. Only needed for a real FastEdge deployment; the sandbox runs against the local control-plane mock, which accepts the placeholder in .env.base44-defaults.",
       "requiredAtBoot": false
     }
   ]

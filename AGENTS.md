@@ -15,47 +15,13 @@ curl -s http://localhost:3000/healthz
 Admin panel: <http://localhost:3000> — sign in with `bootstrap-admin` /
 `bootstrap-secret-1` (the documented local-only test credential).
 
-Four services (the `app` one is the web entry point, on host port 3000):
+Three services:
 
 | Service | What it is |
 | --- | --- |
 | `app` | The real WASM artifact, built from the bind-mounted source, executed by the real FastEdge runtime (`fastedge-run`). Publishes host port 3000. |
 | `control-plane` | The project's local Gcore control-plane mock **and** the Redis-backed Edge Storage stand-in (redislite) it embeds. Local testing only — never deployed. |
-| `geo-page` | The second, independent project in this repo (`geo-page/`, its own `package.json`, a FastEdge HTTP app in TypeScript). Publishes host port 8080. |
-| (image only) | `.base44/Dockerfile.app` / `.base44/Dockerfile.control-plane` provide toolchains and the runtime; **no application code is baked in**. The `geo-page` service runs the plain `node:22` base image with the repo bind-mounted. |
-
-## geo-page (the TypeScript FastEdge app)
-
-`geo-page/` shares nothing with the Rust/WASM admin platform. It is a FastEdge **HTTP
-app** that shows the visitor's IP, country and city, and it is deployed to the real edge
-with `geo-page/scripts/deploy.sh` — not by a compose service.
-
-```bash
-docker compose -f docker-compose.base44.yml up -d geo-page
-docker compose -f docker-compose.base44.yml exec -T geo-page npm test   # 8 tests, real fastedge-run
-curl -s http://localhost:8080/ | head
-```
-
-The service installs from the committed lockfile, builds the wasm from the bind-mounted
-source, then runs `scripts/preview.mjs`: the real `fastedge-run` behind a proxy with
-**demo** geo headers (Lisbon/PT, POP Paris), because a machine outside Gcore's network
-has no POP to inject `geoip-*`. It watches `geo-page/src/` and rebuilds + restarts.
-
-Facts that cost a session to establish (verified 2026-10-27 from this sandbox):
-
-1. **Egress to `api.gcore.com` works from here** — an earlier session recorded it as
-   blocked. Unauthenticated `GET /fastedge/v1/{apps,binaries,me}` answers `401`, and an
-   unknown path answers `404` `no matching operation`, which is enough to confirm the
-   endpoints `geo-page/scripts/deploy.sh` uses (`GET /fastedge/v1/binaries/raw` answers
-   `405`, i.e. the path exists and takes `POST`).
-2. The published deploy flow is exactly what that script does: `POST
-   /fastedge/v1/binaries/raw` (octet-stream) → `{id, api_type}`; then `POST
-   /fastedge/v1/apps` with `{name, binary, status: 1}` → `{name, url}`, the URL being
-   `https://<name>-<account-id>.fastedge.app` and going active within seconds.
-3. The deploy needs `jq`, which the `node:22` image does **not** have — run it from the
-   host shell (the host has `node`, `npm` and `jq`), with the platform's secrets sourced:
-   `set -a; . /run/base44/app.env; set +a; cd geo-page && ./scripts/deploy.sh`.
-   `--dry-run` prints the plan and needs no key.
+| (image only) | `.base44/Dockerfile.app` / `.base44/Dockerfile.control-plane` provide toolchains and the runtime; **no application code is baked in**. |
 
 ## Non-obvious things that will bite you
 
