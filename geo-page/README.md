@@ -39,12 +39,14 @@ Every response is `Cache-Control: no-store` with `Vary: geoip-country-code, geoi
 npm install
 npm run build          # tsc (strict) → wasm/geo-page.wasm
 npm test               # 8 tests, run against the built WASM
-./scripts/preview.sh   # real fastedge-run + socat on http://localhost:8080
+./scripts/preview.mjs  # real fastedge-run behind a proxy on http://localhost:8080
 ```
 
 `npm test` uses `@gcoredev/fastedge-test`, which boots the bundled `fastedge-run` binary — the same runtime the edge uses — and issues real HTTP requests at the compiled WASM. The tests feed `x-real-ip` / `geoip-*` headers exactly as a POP would.
 
-`scripts/preview.sh` serves the built artifact on `0.0.0.0:8080` with **demo** geo values (visitor in Lisbon, Portugal; POP in Paris), because a machine outside Gcore's network has no POP to inject geo headers. It is a faithful preview of the deployed page, not the edge deployment itself.
+`scripts/preview.mjs` serves the built artifact on `0.0.0.0:8080` with **demo** geo values (visitor in Lisbon, Portugal; POP in Paris), because a machine outside Gcore's network has no POP to inject geo headers. It is a faithful preview of the deployed page, not the edge deployment itself.
+
+It runs the bundled `fastedge-run` exactly as the tests do and proxies it, for two reasons: the runtime binds loopback only, and the app's production CSP (`frame-ancestors 'none'`) would correctly refuse to render inside a preview panel's iframe. The proxy therefore drops that one response header in preview only — every other header the edge app emits (`no-store`, `Vary`, `nosniff`, `Referrer-Policy`, content type) is passed through untouched, and `npm test` asserts the real CSP on the artifact itself.
 
 ## Deploy
 
@@ -63,7 +65,7 @@ The script implements the `/gcore-fastedge:deploy` flow in one command:
 5. polls the returned app URL until it answers `200`, then prints name / app ID / binary ID / URL
 6. records `appName`, `appId`, `binaryId`, `appUrl` in `.fastedge/deployment.json` (git-ignored) so a re-deploy updates the same app
 
-Useful flags: `--dry-run` (plan only, no key needed), `--name`, `--description`, `--wasm`, `--skip-build`. `GCORE_API_BASE` overrides the API host. Requirements: `curl`, `jq`, Node ≥ 22.
+Useful flags: `--dry-run` (plan only, no key needed), `--name`, `--description`, `--wasm`, `--skip-build`. `GCORE_API_BASE` overrides the API host. Requirements: `curl`, `jq`, Node ≥ 22. No Docker and no extra tooling — the FastEdge runtime ships with `@gcoredev/fastedge-test`.
 
 The API returns the app URL at build time (`POST`/`PATCH /fastedge/v1/apps` → `url`), typically of the form `https://<app-id>.fastedge.gcore.com`. There is no separate DNS step.
 
@@ -98,7 +100,7 @@ geo-page/
 ├── src/index.ts            # the whole app (routing, rendering, JSON)
 ├── fastedge-test/app.test.mjs
 ├── scripts/deploy.sh       # build → upload → create/update → verify
-├── scripts/preview.sh      # local fastedge-run + socat preview
+├── scripts/preview.mjs     # local fastedge-run behind an embedding-safe proxy
 ├── package.json
 └── tsconfig.json           # strict, noEmit (fastedge-build does the bundling)
 ```
@@ -109,11 +111,11 @@ geo-page/
 |---|---|
 | `npm run build` (tsc strict + fastedge-build) | build success, `wasm/geo-page.wasm` = 12,127,012 bytes |
 | `npm test` (`@gcoredev/fastedge-test` + real `fastedge-run`) | **8/8 passed** |
-| `scripts/preview.sh` + `curl` against the runtime | `200` HTML with IP `203.0.113.42`, Lisbon, Portugal 🇵🇹; `/api/me` JSON; `/healthz` ok |
+| `npm run preview` + `curl` on `:8080` | `200` HTML with IP `203.0.113.42`, Lisbon, Portugal 🇵🇹, POP Paris, FR; `/api/me` JSON; `/healthz` ok; `POST /` → `405` |
 | `scripts/deploy.sh` from this sandbox | **blocked**: `curl: (35) OpenSSL SSL_connect: SSL_ERROR_SYSCALL in connection to api.gcore.com:443` — the sandbox's egress allowlist has no route to Gcore, so the upload never reached the API. The same script is the deploy path from any machine that can reach `api.gcore.com`. |
 
 ## Limits
 
 - City/region accuracy is only as good as Gcore's GeoIP database; a missing city renders as `Unknown`, never as a wrong guess.
 - Basic-plan execution is capped at 50 ms and 128 MB — this app renders a single string and does no I/O, so it stays far inside both.
-- `geoip-*` headers are injected by the POP, not by the client; the local runtime has to be told to supply them (that is what `scripts/preview.sh` does).
+- `geoip-*` headers are injected by the POP, not by the client; the local runtime has to be told to supply them (that is what `scripts/preview.mjs` does).

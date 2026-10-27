@@ -8,7 +8,7 @@
     "typecheck": "tsc --noEmit",
     "build": "tsc && npx fastedge-build --input ./src/index.ts --output ./wasm/geo-page.wasm --tsconfig ./tsconfig.json",
     "test": "node ./fastedge-test/app.test.mjs",
-    "preview": "./scripts/preview.sh",
+    "preview": "node ./scripts/preview.mjs",
     "deploy": "./scripts/deploy.sh"
   },
   "devDependencies": {
